@@ -125,8 +125,8 @@
  */
 #define MCE_SELF_VECTOR			0xeb
 
-/* Xen vector callback to receive events in a HVM domain */
-#define XEN_HVM_EVTCHN_CALLBACK		0xe9
+/* Vector on which hypervisor callbacks will be delivered */
+#define HYPERVISOR_CALLBACK_VECTOR	0xe9
 
 #define NR_VECTORS			 256
 

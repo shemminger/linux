@@ -12,10 +12,23 @@
 
 #include <linux/types.h>
 #include <linux/module.h>
+#include <linux/hardirq.h>
+#include <linux/interrupt.h>
 #include <asm/processor.h>
 #include <asm/hypervisor.h>
 #include <asm/hyperv.h>
 #include <asm/mshyperv.h>
+#include <asm/desc.h>
+#include <asm/idle.h>
+#include <asm/irq_regs.h>
+
+
+/* We disable CONFIG_STAGING, so CONFIG_HYPERV is not set */
+#if defined(CONFIG_HYPERV)
+#error the in-tree LIS modules of 2.6.37 should not be enabled
+#else
+#define CONFIG_HYPERV y
+#endif
 
 struct ms_hyperv_info ms_hyperv;
 EXPORT_SYMBOL_GPL(ms_hyperv);
@@ -46,6 +59,13 @@ static void __init ms_hyperv_init_platform(void)
 
 	printk(KERN_INFO "HyperV: features 0x%x, hints 0x%x\n",
 	       ms_hyperv.features, ms_hyperv.hints);
+
+#ifdef CONFIG_HYPERV
+	/*
+	 * Setup the IDT for hypervisor callback.
+	 */
+	alloc_intr_gate(HYPERVISOR_CALLBACK_VECTOR, hyperv_callback_vector);
+#endif
 }
 
 const __refconst struct hypervisor_x86 x86_hyper_ms_hyperv = {
@@ -54,3 +74,39 @@ const __refconst struct hypervisor_x86 x86_hyper_ms_hyperv = {
 	.init_platform		= ms_hyperv_init_platform,
 };
 EXPORT_SYMBOL(x86_hyper_ms_hyperv);
+
+#ifdef CONFIG_HYPERV
+static int vmbus_irq = -1;
+
+/* Actually vmbus_isr is not used */
+/* static irq_handler_t vmbus_isr; */
+
+void hv_register_vmbus_handler(int irq, irq_handler_t handler)
+{
+	vmbus_irq = irq;
+	/* vmbus_isr = handler; */
+}
+
+/* This function can run on every cpu */
+void hyperv_vector_handler(struct pt_regs *regs)
+{
+	struct pt_regs *old_regs = set_irq_regs(regs);
+	struct irq_desc *desc;
+
+	irq_enter();
+	exit_idle();
+
+	desc = irq_to_desc(vmbus_irq);
+
+	if (desc)
+		generic_handle_irq_desc(vmbus_irq, desc);
+
+	irq_exit();
+	set_irq_regs(old_regs);
+}
+#else
+void hv_register_vmbus_handler(int irq, irq_handler_t handler)
+{
+}
+#endif
+EXPORT_SYMBOL_GPL(hv_register_vmbus_handler);
