@@ -1,0 +1,10 @@
+config HYPERV_SOCK
+	tristate "Microsoft Hyper-V Socket (EXPERIMENTAL)"
+	depends on HYPERV
+	default m if HYPERV
+	help
+	  Hyper-V Socket is a socket protocol similar to TCP, allowing
+	  communication between a Linux guest and the host.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called hv_sock.
