@@ -1322,4 +1322,12 @@ struct vmpipe_proto_header {
 #define HVSOCK_HEADER_LEN	(sizeof(struct vmpacket_descriptor) + \
 				 sizeof(struct vmpipe_proto_header))
 
+/* See 'prev_indices' in hv_ringbuffer_read(), hv_ringbuffer_write() */
+#define PREV_INDICES_LEN	(sizeof(u64))
+
+#define HVSOCK_PKT_LEN(payload_len)	(HVSOCK_HEADER_LEN + \
+					ALIGN((payload_len), 8) + \
+					PREV_INDICES_LEN)
+#define HVSOCK_MIN_PKT_LEN	HVSOCK_PKT_LEN(1)
+
 #endif /* _HYPERV_H */
