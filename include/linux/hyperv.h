@@ -1268,4 +1268,16 @@ extern __u32 vmbus_proto_version;
 
 int vmbus_send_tl_connect_request(const uuid_le *shv_guest_servie_id,
 				  const uuid_le *shv_host_servie_id);
+struct vmpipe_proto_header {
+	u32 pkt_type;
+
+	union {
+		u32 data_size;
+		struct {
+			u16 data_size;
+			u16 offset;
+		} partial;
+	};
+} __packed;
+
 #endif /* _HYPERV_H */

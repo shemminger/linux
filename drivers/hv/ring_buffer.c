@@ -382,32 +382,43 @@ int hv_ringbuffer_write(struct hv_ring_buffer_info *outring_info,
 
 int hv_ringbuffer_read(struct hv_ring_buffer_info *inring_info,
 		       void *buffer, u32 buflen, u32 *buffer_actual_len,
-		       u64 *requestid, bool *signal, bool raw)
+		       u64 *requestid, bool *signal, u32 read_flags)
 {
+	bool raw = !!(read_flags & HV_RINGBUFFER_READ_FLAG_RAW);
+	bool hvsock = !!(read_flags & HV_RINGBUFFER_READ_FLAG_HVSOCK);
+
 	u32 bytes_avail_towrite;
 	u32 bytes_avail_toread;
 	u32 next_read_location = 0;
 	u64 prev_indices = 0;
 	unsigned long flags;
-	struct vmpacket_descriptor desc;
+	struct vmpipe_proto_header *pipe_hdr;
+	struct vmpacket_descriptor *desc;
 	u32 offset;
-	u32 packetlen;
+	u32 packetlen, tot_hdrlen;
 	int ret = 0;
 
 	if (buflen <= 0)
 		return -EINVAL;
 
+	tot_hdrlen = sizeof(*desc);
+	if (hvsock)
+		tot_hdrlen += sizeof(*pipe_hdr);
+
 	spin_lock_irqsave(&inring_info->ring_lock, flags);
 
 	*buffer_actual_len = 0;
-	*requestid = 0;
+
+	/* If some driver doesn't need the info, a NULL is passed in. */
+	if (requestid)
+		*requestid = 0;
 
 	hv_get_ringbuffer_availbytes(inring_info,
 				&bytes_avail_toread,
 				&bytes_avail_towrite);
 
 	/* Make sure there is something to read */
-	if (bytes_avail_toread < sizeof(desc)) {
+	if (bytes_avail_toread < tot_hdrlen) {
 		/*
 		 * No error is set when there is even no header, drivers are
 		 * supposed to analyze buffer_actual_len.
@@ -415,17 +426,26 @@ int hv_ringbuffer_read(struct hv_ring_buffer_info *inring_info,
 		goto out_unlock;
 	}
 
+	if (tot_hdrlen > buflen) {
+		ret = -ENOBUFS;
+		goto out_unlock;
+	}
+
+	desc = (struct vmpacket_descriptor *)buffer;
+
 	next_read_location = hv_get_next_read_location(inring_info);
-	next_read_location = hv_copyfrom_ringbuffer(inring_info, &desc,
-						    sizeof(desc),
+	next_read_location = hv_copyfrom_ringbuffer(inring_info, desc,
+						    tot_hdrlen,
 						    next_read_location);
+	offset = 0;
+	if (!raw)
+		offset += (desc->offset8 << 3);
+	if (hvsock)
+		offset += sizeof(*pipe_hdr);
 
-	offset = raw ? 0 : (desc.offset8 << 3);
-	packetlen = (desc.len8 << 3) - offset;
-	*buffer_actual_len = packetlen;
-	*requestid = desc.trans_id;
+	packetlen = (desc->len8 << 3) - offset;
 
-	if (bytes_avail_toread < packetlen + offset) {
+	if (bytes_avail_toread < (desc->len8 << 3)) {
 		ret = -EAGAIN;
 		goto out_unlock;
 	}
@@ -433,6 +453,16 @@ int hv_ringbuffer_read(struct hv_ring_buffer_info *inring_info,
 	if (packetlen > buflen) {
 		ret = -ENOBUFS;
 		goto out_unlock;
+	}
+
+	if (requestid)
+		*requestid = desc->trans_id;
+
+	if (!hvsock)
+		*buffer_actual_len = packetlen;
+	else {
+		pipe_hdr = (struct vmpipe_proto_header *)(desc + 1);
+		*buffer_actual_len = pipe_hdr->data_size;
 	}
 
 	next_read_location =
