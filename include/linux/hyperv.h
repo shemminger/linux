@@ -645,6 +645,12 @@ enum hv_signal_policy {
 	HV_SIGNAL_POLICY_EXPLICIT,
 };
 
+/* hvsock related definitions */
+enum hvsock_event {
+	/* The host application is close()-ing the connection */
+	HVSOCK_RESCIND_CHANNEL,
+};
+
 struct vmbus_channel {
 	/* Unique channel id */
 	int id;
@@ -740,6 +746,13 @@ struct vmbus_channel {
 	void (*sc_creation_callback)(struct vmbus_channel *new_sc);
 
 	/*
+	 * hvsock event callback.
+	 * For now only 1 event is defined: HVSOCK_RESCIND_CHANNEL.
+	 */
+	void (*hvsock_event_callback)(struct vmbus_channel *channel,
+				      enum hvsock_event event);
+
+	/*
 	 * The spinlock to protect the structure. It is being used to protect
 	 * test-and-set access to various attributes of the structure as well
 	 * as all sc_list operations.
@@ -824,6 +837,10 @@ int vmbus_request_offers(void);
 
 void vmbus_set_sc_create_callback(struct vmbus_channel *primary_channel,
 			void (*sc_cr_cb)(struct vmbus_channel *new_sc));
+
+void vmbus_set_hvsock_event_callback(struct vmbus_channel *channel,
+		void (*hvsock_event_callback)(struct vmbus_channel *,
+					      enum hvsock_event));
 
 /*
  * Retrieve the (sub) channel on which to send an outgoing request.
