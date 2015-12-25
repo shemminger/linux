@@ -908,6 +908,9 @@ extern int vmbus_sendpacket_ctl(struct vmbus_channel *channel,
 				  u32 flags,
 				  bool kick_q);
 
+extern int vmbus_sendpacket_hvsock(struct vmbus_channel *channel,
+				   void *buf, u32 len);
+
 extern int vmbus_sendpacket_pagebuffer(struct vmbus_channel *channel,
 					    struct hv_page_buffer pagebuffers[],
 					    u32 pagecount,
@@ -957,6 +960,9 @@ extern int vmbus_recvpacket_raw(struct vmbus_channel *channel,
 				     u32 *buffer_actual_len,
 				     u64 *requestid);
 
+
+extern int vmbus_recvpacket_hvsock(struct vmbus_channel *channel, void *buffer,
+				   u32 bufferlen, u32 *buffer_actual_len);
 
 extern void vmbus_ontimer(unsigned long data);
 
@@ -1279,5 +1285,8 @@ struct vmpipe_proto_header {
 		} partial;
 	};
 } __packed;
+
+#define HVSOCK_HEADER_LEN	(sizeof(struct vmpacket_descriptor) + \
+				 sizeof(struct vmpipe_proto_header))
 
 #endif /* _HYPERV_H */
