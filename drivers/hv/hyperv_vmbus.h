@@ -619,9 +619,20 @@ int hv_ringbuffer_write(struct hv_ring_buffer_info *ring_info,
 		    struct kvec *kv_list,
 		    u32 kv_count, bool *signal);
 
+/*
+ * By default, a read_flags of 0 means: the payload offset is
+ * sizeof(struct vmpacket_descriptor).
+ *
+ * If HV_RINGBUFFER_READ_FLAG_RAW is used, the payload offset is 0.
+ *
+ * If HV_RINGBUFFER_READ_FLAG_HVSOCK is used, the payload offset is
+ * sizeof(struct vmpacket_descriptor) + sizeof(struct vmpipe_proto_header).
+ */
+#define HV_RINGBUFFER_READ_FLAG_RAW		(1 << 0)
+#define HV_RINGBUFFER_READ_FLAG_HVSOCK		(1 << 1)
 int hv_ringbuffer_read(struct hv_ring_buffer_info *inring_info,
 		       void *buffer, u32 buflen, u32 *buffer_actual_len,
-		       u64 *requestid, bool *signal, bool raw);
+		       u64 *requestid, bool *signal, u32 read_flags);
 
 void hv_ringbuffer_get_debuginfo(struct hv_ring_buffer_info *ring_info,
 			    struct hv_ring_buffer_debug_info *debug_info);

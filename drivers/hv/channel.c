@@ -940,13 +940,14 @@ EXPORT_SYMBOL_GPL(vmbus_sendpacket_multipagebuffer);
 static inline int
 __vmbus_recvpacket(struct vmbus_channel *channel, void *buffer,
 		   u32 bufferlen, u32 *buffer_actual_len, u64 *requestid,
-		   bool raw)
+		   u32 read_flags)
 {
 	int ret;
 	bool signal = false;
 
 	ret = hv_ringbuffer_read(&channel->inbound, buffer, bufferlen,
-				 buffer_actual_len, requestid, &signal, raw);
+				 buffer_actual_len, requestid, &signal,
+				 read_flags);
 
 	if (signal)
 		vmbus_setevent(channel);
@@ -959,7 +960,7 @@ int vmbus_recvpacket(struct vmbus_channel *channel, void *buffer,
 		     u64 *requestid)
 {
 	return __vmbus_recvpacket(channel, buffer, bufferlen,
-				  buffer_actual_len, requestid, false);
+				  buffer_actual_len, requestid, 0);
 }
 EXPORT_SYMBOL(vmbus_recvpacket);
 
@@ -971,6 +972,7 @@ int vmbus_recvpacket_raw(struct vmbus_channel *channel, void *buffer,
 			      u64 *requestid)
 {
 	return __vmbus_recvpacket(channel, buffer, bufferlen,
-				  buffer_actual_len, requestid, true);
+				  buffer_actual_len, requestid,
+				  HV_RINGBUFFER_READ_FLAG_RAW);
 }
 EXPORT_SYMBOL_GPL(vmbus_recvpacket_raw);
