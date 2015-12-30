@@ -411,4 +411,13 @@ struct sockaddr_hv {
 
 #define SHV_PROTO_RAW		1
 
+/* for out-of-tree modules: we can't change AF_MAX... */
+#if AF_MAX == 41
+#define AF_HYPERV      40      /* Hyper-V virtual sockets      */
+#else
+#define AF_HYPERV      41      /* Hyper-V virtual sockets      */
+#endif
+
+#define PF_HYPERV       AF_HYPERV
+
 #endif /* _UAPI_HYPERV_H */
