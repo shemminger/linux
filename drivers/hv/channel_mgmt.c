@@ -250,6 +250,7 @@ static void vmbus_process_offer(struct vmbus_channel *newchannel)
 	struct vmbus_channel *channel;
 	bool fnew = true;
 	unsigned long flags;
+	int ret;
 
 	/* Make sure this is a new offer */
 	mutex_lock(&vmbus_connection.channel_mutex);
@@ -329,7 +330,11 @@ static void vmbus_process_offer(struct vmbus_channel *newchannel)
 	 * binding which eventually invokes the device driver's AddDevice()
 	 * method.
 	 */
-	if (vmbus_device_register(newchannel->device_obj) != 0) {
+	mutex_lock(&vmbus_connection.channel_mutex);
+	ret = vmbus_device_register(newchannel->device_obj);
+	mutex_unlock(&vmbus_connection.channel_mutex);
+
+	if (ret != 0) {
 		pr_err("unable to add child device object (relid %d)\n",
 			newchannel->offermsg.child_relid);
 		kfree(newchannel->device_obj);
