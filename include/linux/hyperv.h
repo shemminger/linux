@@ -1328,6 +1328,9 @@ extern bool vmbus_prep_negotiate_resp(struct icmsg_hdr *,
 					struct icmsg_negotiate *, u8 *, int,
 					int);
 
+void percpu_channel_enq(void *arg);
+void percpu_channel_deq(void *arg);
+
 void hv_process_channel_removal(struct vmbus_channel *channel, u32 relid);
 
 /*
