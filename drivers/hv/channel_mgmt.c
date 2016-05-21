@@ -21,7 +21,6 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/kernel.h>
-#include <linux/interrupt.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/mm.h>
@@ -278,7 +277,7 @@ static void free_channel(struct vmbus_channel *channel)
 	kfree(channel);
 }
 
-void percpu_channel_enq(void *arg)
+static void percpu_channel_enq(void *arg)
 {
 	struct vmbus_channel *channel = arg;
 	int cpu = smp_processor_id();
@@ -286,7 +285,7 @@ void percpu_channel_enq(void *arg)
 	list_add_tail(&channel->percpu_list, &hv_context.percpu_list[cpu]);
 }
 
-void percpu_channel_deq(void *arg)
+static void percpu_channel_deq(void *arg)
 {
 	struct vmbus_channel *channel = arg;
 
@@ -313,6 +312,15 @@ void hv_process_channel_removal(struct vmbus_channel *channel, u32 relid)
 
 	BUG_ON(!channel->rescind);
 	BUG_ON(!mutex_is_locked(&vmbus_connection.channel_mutex));
+
+	if (channel->target_cpu != get_cpu()) {
+		put_cpu();
+		smp_call_function_single(channel->target_cpu,
+					 percpu_channel_deq, channel, true);
+	} else {
+		percpu_channel_deq(channel);
+		put_cpu();
+	}
 
 	if (channel->primary_channel == NULL) {
 		list_del(&channel->listentry);
@@ -355,7 +363,6 @@ void vmbus_free_channels(void)
  */
 static void vmbus_process_offer(struct vmbus_channel *newchannel)
 {
-	struct tasklet_struct *tasklet;
 	struct vmbus_channel *channel;
 	bool fnew = true;
 	unsigned long flags;
@@ -402,8 +409,6 @@ static void vmbus_process_offer(struct vmbus_channel *newchannel)
 
 	init_vp_index(newchannel, dev_type);
 
-	tasklet = hv_context.event_dpc[newchannel->target_cpu];
-	tasklet_disable(tasklet);
 	if (newchannel->target_cpu != get_cpu()) {
 		put_cpu();
 		smp_call_function_single(newchannel->target_cpu,
@@ -413,7 +418,6 @@ static void vmbus_process_offer(struct vmbus_channel *newchannel)
 		percpu_channel_enq(newchannel);
 		put_cpu();
 	}
-	tasklet_enable(tasklet);
 
 	/*
 	 * This state is used to indicate a successful open
@@ -465,7 +469,6 @@ err_deq_chan:
 	list_del(&newchannel->listentry);
 	mutex_unlock(&vmbus_connection.channel_mutex);
 
-	tasklet_disable(tasklet);
 	if (newchannel->target_cpu != get_cpu()) {
 		put_cpu();
 		smp_call_function_single(newchannel->target_cpu,
@@ -474,7 +477,6 @@ err_deq_chan:
 		percpu_channel_deq(newchannel);
 		put_cpu();
 	}
-	tasklet_enable(tasklet);
 
 err_free_chan:
 	free_channel(newchannel);
