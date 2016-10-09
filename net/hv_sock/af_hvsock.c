@@ -329,14 +329,7 @@ static struct sock *hvsock_create(struct net *net, struct socket *sock,
 
 	sk->sk_destruct = hvsock_sk_destruct;
 
-	/* Looks stream-based socket doesn't need this. */
-	sk->sk_backlog_rcv = NULL;
-
-	sk->sk_state = 0;
-	sock_reset_flag(sk, SOCK_DONE);
-
 	hvsk = sk_to_hvsock(sk);
-
 	hvsk->send = NULL;
 	hvsk->recv = NULL;
 
@@ -345,7 +338,6 @@ static struct sock *hvsock_create(struct net *net, struct socket *sock,
 
 	INIT_LIST_HEAD(&hvsk->bound_list);
 	INIT_LIST_HEAD(&hvsk->connected_list);
-
 	INIT_LIST_HEAD(&hvsk->accept_queue);
 	mutex_init(&hvsk->accept_queue_mutex);
 
