@@ -706,6 +706,7 @@ static int hvsock_open_connection(struct vmbus_channel *channel)
 		goto out;
 	}
 
+	printk("cdx: hvsock_open_connection\n ");
 	if (conn_from_host) {
 		if (sk->sk_ack_backlog >= sk->sk_max_ack_backlog) {
 			ret = -ECONNREFUSED;
@@ -749,6 +750,7 @@ static int hvsock_open_connection(struct vmbus_channel *channel)
 	set_channel_pending_send_size(channel,
 				      HVSOCK_PKT_LEN(PAGE_SIZE_4K) + 1);
 
+	/* TODO: what if the server doesn't accept() the connections??? */
 	if (conn_from_host) {
 		new_sk->sk_state = SS_CONNECTED;
 
@@ -927,12 +929,17 @@ static int hvsock_accept_wait(struct sock *listener,
 	 * created upon connection establishment.
 	 */
 	timeout = sock_sndtimeo(listener, flags & O_NONBLOCK);
-	prepare_to_wait(sk_sleep(listener), &wait, TASK_INTERRUPTIBLE);
 
 	while ((connected = hvsock_dequeue_accept(listener)) == NULL &&
 	       listener->sk_err == 0) {
 		release_sock(listener);
+
+		prepare_to_wait(sk_sleep(listener), &wait, TASK_INTERRUPTIBLE);
+		printk("cdx: hvsock_accept_wait: 1\n");
 		timeout = schedule_timeout(timeout);
+		printk("cdx: hvsock_accept_wait: 2, timeout=%ld\n", timeout);
+		finish_wait(sk_sleep(listener), &wait);
+
 		lock_sock(listener);
 
 		if (signal_pending(current)) {
@@ -943,7 +950,6 @@ static int hvsock_accept_wait(struct sock *listener,
 			goto out_wait;
 		}
 
-		prepare_to_wait(sk_sleep(listener), &wait, TASK_INTERRUPTIBLE);
 	}
 
 	if (listener->sk_err)
@@ -962,7 +968,6 @@ static int hvsock_accept_wait(struct sock *listener,
 	}
 
 out_wait:
-	finish_wait(sk_sleep(listener), &wait);
 	return ret;
 }
 
@@ -1180,6 +1185,8 @@ static int hvsock_sendmsg(struct socket *sock, struct msghdr *msg,
 	}
 
 	ret = hvsock_sendmsg_wait(sk, msg, len);
+	//printk("cdx:------------------------------write: ret=%d\n", ret);
+	//WARN_ON(1);
 out:
 	release_sock(sk);
 
