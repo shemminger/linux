@@ -128,6 +128,8 @@ struct hv_ring_buffer_info {
 	u32 ring_data_startoffset;
 	u32 priv_write_index;
 	u32 priv_read_index;
+
+	u32 cached_read_index;
 };
 
 /*
@@ -180,6 +182,18 @@ static inline u32 hv_get_bytes_to_write(struct hv_ring_buffer_info *rbi)
 	return write;
 }
 
+static inline u32 hv_get_cached_bytes_to_write(struct hv_ring_buffer_info *rbi)
+{
+	u32 read_loc, write_loc, dsize, write;
+
+	dsize = rbi->ring_datasize;
+	read_loc = rbi->cached_read_index;
+	write_loc = rbi->ring_buffer->write_index;
+
+	write = write_loc >= read_loc ? dsize - (write_loc - read_loc) :
+		read_loc - write_loc;
+	return write;
+}
 /*
  * VMBUS version is 32 bit entity broken up into
  * two 16 bit quantities: major_number. minor_number.
@@ -1489,6 +1503,7 @@ hv_get_ring_buffer(struct hv_ring_buffer_info *ring_info)
 static inline  void hv_signal_on_read(struct vmbus_channel *channel)
 {
 	u32 cur_write_sz;
+	u32 cached_write_sz;
 	u32 pending_sz;
 	struct hv_ring_buffer_info *rbi = &channel->inbound;
 
@@ -1511,13 +1526,21 @@ static inline  void hv_signal_on_read(struct vmbus_channel *channel)
 		return;
 
 	cur_write_sz = hv_get_bytes_to_write(rbi);
+	cached_write_sz = hv_get_cached_bytes_to_write(rbi);
 
-	if (cur_write_sz >= pending_sz)
+	if (cur_write_sz >= pending_sz && cached_write_sz < pending_sz)
 		vmbus_setevent(channel);
 
 	return;
 }
 
+static inline void
+update_cached_read_index(struct vmbus_channel *channel)
+{
+	struct hv_ring_buffer_info *rbi = &channel->inbound;
+
+	rbi->cached_read_index = READ_ONCE(rbi->ring_buffer->read_index);
+}
 /*
  * An API to support in-place processing of incoming VMBUS packets.
  */

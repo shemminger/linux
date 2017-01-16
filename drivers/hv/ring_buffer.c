@@ -384,6 +384,7 @@ int hv_ringbuffer_read(struct vmbus_channel *channel,
 	}
 
 	next_read_location = hv_get_next_read_location(inring_info);
+	inring_info->cached_read_index = next_read_location;
 	next_read_location = hv_copyfrom_ringbuffer(inring_info, &desc,
 						    sizeof(desc),
 						    next_read_location);
