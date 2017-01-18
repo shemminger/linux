@@ -5,14 +5,14 @@
 #include <linux/hyperv.h>
 #include <net/sock.h>
 
-/* The host side's design of the feature requires 5 exact 4KB pages for
+/* The host side's design of the feature requires 6 exact 4KB pages for
  * recv/send rings respectively -- this is suboptimal considering memory
  * consumption, however unluckily we have to live with it, before the
  * host comes up with a better design in the future.
  */
 #define PAGE_SIZE_4K		4096
-#define RINGBUFFER_HVSOCK_RCV_SIZE (PAGE_SIZE_4K * 5)
-#define RINGBUFFER_HVSOCK_SND_SIZE (PAGE_SIZE_4K * 5)
+#define RINGBUFFER_HVSOCK_RCV_SIZE (PAGE_SIZE_4K * 6)
+#define RINGBUFFER_HVSOCK_SND_SIZE (PAGE_SIZE_4K * 6)
 
 /* The MTU is 16KB per the host side's design.
  * In future, the buffer can be elimiated when we switch to use the coming
