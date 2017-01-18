@@ -106,9 +106,11 @@ static bool hv_need_to_signal(u32 old_write, struct hv_ring_buffer_info *rbi)
 static bool hv_need_to_signal_on_read(struct hv_ring_buffer_info *rbi)
 {
 	u32 cur_write_sz;
+	u32 cached_write_sz;
 	u32 r_size;
 	u32 write_loc;
 	u32 read_loc = rbi->ring_buffer->read_index;
+	u32 cached_read_loc = rbi->cached_read_index;
 	u32 pending_sz;
 
 	/*
@@ -134,7 +136,10 @@ static bool hv_need_to_signal_on_read(struct hv_ring_buffer_info *rbi)
 	cur_write_sz = write_loc >= read_loc ? r_size - (write_loc - read_loc) :
 			read_loc - write_loc;
 
-	if (cur_write_sz >= pending_sz)
+	cached_write_sz = write_loc >= cached_read_loc ? r_size - (write_loc - cached_read_loc) :
+			cached_read_loc - write_loc;
+
+	if (cur_write_sz >= pending_sz && cached_write_sz < pending_sz)
 		return true;
 
 	return false;
@@ -431,6 +436,7 @@ int hv_ringbuffer_read(struct hv_ring_buffer_info *inring_info,
 	}
 
 	next_read_location = hv_get_next_read_location(inring_info);
+	inring_info->cached_read_index = next_read_location;
 	next_read_location = hv_copyfrom_ringbuffer(inring_info, &desc,
 						    sizeof(desc),
 						    next_read_location);

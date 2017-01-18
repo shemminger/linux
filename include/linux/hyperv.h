@@ -126,6 +126,8 @@ struct hv_ring_buffer_info {
 
 	u32 ring_datasize;		/* < ring_size */
 	u32 ring_data_startoffset;
+
+	u32 cached_read_index;
 };
 
 /*
