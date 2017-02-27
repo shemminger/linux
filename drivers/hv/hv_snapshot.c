@@ -396,9 +396,12 @@ hv_vss_init(struct hv_util_service *srv)
 
 void hv_vss_deinit(void)
 {
+	bool wait = hvt->dev_opened;
+
 	vss_transaction.state = HVUTIL_DEVICE_DYING;
 	cancel_delayed_work_sync(&vss_timeout_work);
 	cancel_work_sync(&vss_handle_request_work);
 	hvutil_transport_destroy(hvt);
-	wait_for_completion(&release_event);
+	if (wait)
+		wait_for_completion(&release_event);
 }

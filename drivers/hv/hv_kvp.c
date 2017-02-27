@@ -742,10 +742,14 @@ hv_kvp_init(struct hv_util_service *srv)
 
 void hv_kvp_deinit(void)
 {
+	bool wait = hvt->dev_opened;
+
 	kvp_transaction.state = HVUTIL_DEVICE_DYING;
 	cancel_delayed_work_sync(&kvp_host_handshake_work);
 	cancel_delayed_work_sync(&kvp_timeout_work);
 	cancel_work_sync(&kvp_sendkey_work);
 	hvutil_transport_destroy(hvt);
-	wait_for_completion(&release_event);
+
+	if (wait)
+		wait_for_completion(&release_event);
 }

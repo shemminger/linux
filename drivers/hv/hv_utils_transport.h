@@ -32,6 +32,7 @@ struct hvutil_transport {
 	int mode;                           /* hvutil_transport_mode */
 	struct file_operations fops;        /* file operations */
 	struct miscdevice mdev;             /* misc device */
+	bool   dev_opened;                  /* Is the device opened? */
 	struct cb_id cn_id;                 /* CN_*_IDX/CN_*_VAL */
 	struct list_head list;              /* hvt_list */
 	int (*on_msg)(void *, int);         /* callback on new user message */

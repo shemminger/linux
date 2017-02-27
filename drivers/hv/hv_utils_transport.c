@@ -153,6 +153,7 @@ static int hvt_op_open(struct inode *inode, struct file *file)
 
 	if (issue_reset)
 		hvt_reset(hvt);
+	hvt->dev_opened = (hvt->mode == HVUTIL_TRANSPORT_CHARDEV) && !ret;
 
 	mutex_unlock(&hvt->lock);
 
@@ -182,6 +183,7 @@ static int hvt_op_release(struct inode *inode, struct file *file)
 	 * connects back.
 	 */
 	hvt_reset(hvt);
+	hvt->dev_opened = false;
 	mutex_unlock(&hvt->lock);
 
 	if (mode_old == HVUTIL_TRANSPORT_DESTROY)
