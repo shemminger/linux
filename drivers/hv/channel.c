@@ -538,7 +538,7 @@ static int vmbus_close_internal(struct vmbus_channel *channel)
 	 * To resolve the race, we can serialize them by disabling the
 	 * tasklet when the latter is running here.
 	 */
-	hv_event_tasklet_disable(channel);
+	tasklet_disable(&channel->callback_event);
 
 	/*
 	 * In case a device driver's probe() fails (e.g.,
@@ -605,8 +605,6 @@ static int vmbus_close_internal(struct vmbus_channel *channel)
 		get_order(channel->ringbuffer_pagecount * PAGE_SIZE));
 
 out:
-	hv_event_tasklet_enable(channel);
-
 	return ret;
 }
 
