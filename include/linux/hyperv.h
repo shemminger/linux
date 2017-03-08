@@ -845,6 +845,9 @@ struct vmbus_channel {
 	 * link up channels based on their CPU affinity.
 	 */
 	struct list_head percpu_list;
+
+	struct rcu_head	rcu;
+
 	/*
 	 * For performance critical channels (storage, networking
 	 * etc,), Hyper-V has a mechanism to enhance the throughput
