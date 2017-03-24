@@ -339,6 +339,15 @@ static void process_chn_event(u32 relid)
 	if (!channel)
 		return;
 
+	if (unlikely(channel->state != CHANNEL_OPENED_STATE)) {
+		printk_ratelimited(KERN_ERR
+			"spurious interrupt: relid=%d, state=%d, hvsock=%d\n",
+			relid, channel->state, is_hvsock_channel(channel));
+		WARN_ON_ONCE(1);
+
+		return;
+	}
+
 	/*
 	 * A channel once created is persistent even when there
 	 * is no driver handling the device. An unloading driver
