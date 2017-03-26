@@ -877,7 +877,32 @@ void vmbus_on_msg_dpc(unsigned long data)
 		INIT_WORK(&ctx->work, vmbus_onmessage_work);
 		memcpy(&ctx->msg, msg, sizeof(*msg));
 
-		queue_work(vmbus_connection.work_queue, &ctx->work);
+		/*
+		 * The host can generate a rescind message while we
+		 * may still be handling the original offer. We deal with
+		 * this condition by ensuring the processing is done on the
+		 * same CPU.
+		 */
+		switch (hdr->msgtype) {
+		case CHANNELMSG_RESCIND_CHANNELOFFER:
+			/*
+			 * If we are handling the rescind message;
+			 * schedule the work on the global work queue.
+			 */
+			schedule_work_on(vmbus_connection.connect_cpu,
+					 &ctx->work);
+			break;
+
+		case CHANNELMSG_OFFERCHANNEL:
+			vmbus_connection.offer_in_progress++;
+			queue_work_on(vmbus_connection.connect_cpu,
+				      vmbus_connection.work_queue,
+				      &ctx->work);
+			break;
+
+		default:
+			queue_work(vmbus_connection.work_queue, &ctx->work);
+		}
 	} else
 		entry->message_handler(hdr);
 
