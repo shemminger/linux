@@ -488,16 +488,16 @@ static int negotiate_nvsp_ver(struct hv_device *device,
 	return ret;
 }
 
-static int netvsc_connect_vsp(struct hv_device *device)
+static int netvsc_connect_vsp(struct hv_device *device,
+			      const struct netvsc_device_info *device_info)
 {
-	int ret;
 	struct netvsc_device *net_device;
 	struct nvsp_message *init_packet;
-	int ndis_version;
 	const u32 ver_list[] = {
 		NVSP_PROTOCOL_VERSION_1, NVSP_PROTOCOL_VERSION_2,
 		NVSP_PROTOCOL_VERSION_4, NVSP_PROTOCOL_VERSION_5 };
-	int i;
+	u32 max_recv_buf_size, ndis_version;
+	int i, ret;
 
 	net_device = get_outbound_net_device(device);
 	if (!net_device)
@@ -546,10 +546,12 @@ static int netvsc_connect_vsp(struct hv_device *device)
 
 	/* Post the big receive buffer to NetVSP */
 	if (net_device->nvsp_version <= NVSP_PROTOCOL_VERSION_2)
-		net_device->recv_buf_size = NETVSC_RECEIVE_BUFFER_SIZE_LEGACY;
+		max_recv_buf_size = NETVSC_RECEIVE_BUFFER_SIZE_LEGACY;
 	else
-		net_device->recv_buf_size = NETVSC_RECEIVE_BUFFER_SIZE;
-	net_device->send_buf_size = NETVSC_SEND_BUFFER_SIZE;
+		max_recv_buf_size = NETVSC_RECEIVE_BUFFER_SIZE;
+
+	net_device->recv_buf_size = min(max_recv_buf_size, device_info->recv_buf_size);
+	net_device->send_buf_size = min_t(u32, NETVSC_SEND_BUFFER_SIZE, device_info->send_buf_size);
 
 	ret = netvsc_init_buf(device);
 
@@ -1359,7 +1361,7 @@ int netvsc_device_add(struct hv_device *device,
 	rcu_assign_pointer(net_device_ctx->nvdev, net_device);
 
 	/* Connect with the NetVsp */
-	ret = netvsc_connect_vsp(device);
+	ret = netvsc_connect_vsp(device, device_info);
 	if (ret != 0) {
 		netdev_err(ndev,
 			"unable to connect to NetVSP - %d\n", ret);
