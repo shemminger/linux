@@ -593,7 +593,9 @@ static u64 hvs_stream_rcvhiwat(struct vsock_sock *vsk)
 
 static bool hvs_stream_is_active(struct vsock_sock *vsk)
 {
-	return true;
+	struct hvsock *hvs = vsk->trans;
+
+	return hvs->chan != NULL;
 }
 
 static bool hvs_stream_allow(u32 cid, u32 port)
