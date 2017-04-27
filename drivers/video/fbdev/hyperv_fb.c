@@ -61,7 +61,7 @@
 #define SYNTHVID_WIDTH_MAX_WIN7 1600
 #define SYNTHVID_HEIGHT_MAX_WIN7 1200
 
-#define SYNTHVID_FB_SIZE_WIN8 (8 * 1024 * 1024)
+#define SYNTHVID_FB_SIZE_WIN8 (64 * 1024 * 1024)
 
 #define PCI_VENDOR_ID_MICROSOFT 0x1414
 #define PCI_DEVICE_ID_HYPERV_VIDEO 0x5353
@@ -202,8 +202,8 @@ struct synthvid_msg {
 
 
 /* FB driver definitions and structures */
-#define HVFB_WIDTH 1152 /* default screen width */
-#define HVFB_HEIGHT 864 /* default screen height */
+#define HVFB_WIDTH 2560 /* default screen width */
+#define HVFB_HEIGHT 1440 /* default screen height */
 #define HVFB_WIDTH_MIN 640
 #define HVFB_HEIGHT_MIN 480
 
@@ -476,6 +476,9 @@ static int synthvid_connect_vsp(struct hv_device *hdev)
 	screen_fb_size = hdev->channel->offermsg.offer.
 				mmio_megabytes * 1024 * 1024;
 
+	if (screen_fb_size >= SYNTHVID_FB_SIZE_WIN8)
+		screen_fb_size = SYNTHVID_FB_SIZE_WIN8;
+
 	return 0;
 
 error:
@@ -685,6 +688,10 @@ static int hvfb_getmem(struct hv_device *hdev, struct fb_info *info)
 	int gen2vm = efi_enabled(EFI_BOOT);
 	resource_size_t pot_start, pot_end;
 	int ret;
+	static struct resource res = {
+		.start = 0xf8000000,
+		.end = 0xfbffffff,
+	};
 
 	if (gen2vm) {
 		pot_start = 0;
@@ -708,8 +715,10 @@ static int hvfb_getmem(struct hv_device *hdev, struct fb_info *info)
 	ret = vmbus_allocate_mmio(&par->mem, hdev, pot_start, pot_end,
 				  screen_fb_size, 0x100000, true);
 	if (ret != 0) {
-		pr_err("Unable to allocate framebuffer memory\n");
-		goto err1;
+		ret = 0;
+		par->mem = &res;
+		pr_err("Unable to allocate framebuffer memory, but trying to use it be force...\n");
+		//goto err1;
 	}
 
 	fb_virt = ioremap(par->mem->start, screen_fb_size);
