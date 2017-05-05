@@ -93,10 +93,13 @@ static int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo,
 	 * all the CPUs. This is needed for kexec to work correctly where
 	 * the CPU attempting to connect may not be CPU 0.
 	 */
-	if (version >= VERSION_WIN8_1)
+	if (version >= VERSION_WIN8_1) {
 		msg->target_vcpu = hv_context.vp_index[smp_processor_id()];
-	else
+		vmbus_connection.connect_cpu = smp_processor_id();
+	} else {
 		msg->target_vcpu = 0;
+		vmbus_connection.connect_cpu = 0;
+	}
 
 	/*
 	 * Add to list before we send the request since we may
@@ -149,6 +152,12 @@ int vmbus_connect(void)
 	vmbus_connection.conn_state = CONNECTING;
 	vmbus_connection.work_queue = create_workqueue("hv_vmbus_con");
 	if (!vmbus_connection.work_queue) {
+		ret = -ENOMEM;
+		goto cleanup;
+	}
+
+	vmbus_connection.work_queue_rescind = create_workqueue("hv_vmbus_rsd");
+	if (!vmbus_connection.work_queue_rescind) {
 		ret = -ENOMEM;
 		goto cleanup;
 	}
@@ -242,6 +251,11 @@ void vmbus_disconnect(void)
 	 * First send the unload request to the host.
 	 */
 	vmbus_initiate_unload(false);
+
+	if (vmbus_connection.work_queue_rescind) {
+		drain_workqueue(vmbus_connection.work_queue_rescind);
+		destroy_workqueue(vmbus_connection.work_queue_rescind);
+	}
 
 	if (vmbus_connection.work_queue) {
 		drain_workqueue(vmbus_connection.work_queue);

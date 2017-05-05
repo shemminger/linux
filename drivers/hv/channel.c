@@ -177,39 +177,39 @@ int vmbus_open(struct vmbus_channel *newchannel, u32 send_ringbuffer_size,
 		      &vmbus_connection.chn_msg_list);
 	spin_unlock_irqrestore(&vmbus_connection.channelmsg_lock, flags);
 
+	hv_percpu_channel_enq(newchannel);
+
 	ret = vmbus_post_msg(open_msg,
 			     sizeof(struct vmbus_channel_open_channel), true);
 
-	if (ret != 0) {
-		err = ret;
-		goto error_clean_msglist;
-	}
-
-	wait_for_completion(&open_info->waitevent);
+	if (ret == 0)
+		wait_for_completion(&open_info->waitevent);
 
 	spin_lock_irqsave(&vmbus_connection.channelmsg_lock, flags);
 	list_del(&open_info->msglistentry);
 	spin_unlock_irqrestore(&vmbus_connection.channelmsg_lock, flags);
 
+	if (ret != 0) {
+		err = ret;
+		goto error_deq_channel;
+	}
+
 	if (newchannel->rescind) {
 		err = -ENODEV;
-		goto error_free_gpadl;
+		goto error_deq_channel;
 	}
 
 	if (open_info->response.open_result.status) {
 		err = -EAGAIN;
-		goto error_free_gpadl;
+		goto error_deq_channel;
 	}
 
 	newchannel->state = CHANNEL_OPENED_STATE;
 	kfree(open_info);
 	return 0;
 
-error_clean_msglist:
-	spin_lock_irqsave(&vmbus_connection.channelmsg_lock, flags);
-	list_del(&open_info->msglistentry);
-	spin_unlock_irqrestore(&vmbus_connection.channelmsg_lock, flags);
-
+error_deq_channel:
+	hv_percpu_channel_deq(newchannel);
 error_free_gpadl:
 	vmbus_teardown_gpadl(newchannel, newchannel->ringbuffer_gpadlhandle);
 	kfree(open_info);
@@ -220,6 +220,8 @@ error_free_pages:
 		     get_order(send_ringbuffer_size + recv_ringbuffer_size));
 error_set_chnstate:
 	newchannel->state = CHANNEL_OPEN_STATE;
+	newchannel->onchannel_callback = NULL;
+	newchannel->channel_callback_context = NULL;
 	return err;
 }
 EXPORT_SYMBOL_GPL(vmbus_open);
@@ -553,6 +555,8 @@ static int vmbus_close_internal(struct vmbus_channel *channel)
 		goto out;
 	}
 
+	hv_percpu_channel_deq(channel);
+
 	channel->state = CHANNEL_OPEN_STATE;
 	channel->sc_creation_callback = NULL;
 	/* Stop callback and cancel the timer asap */
@@ -606,6 +610,7 @@ static int vmbus_close_internal(struct vmbus_channel *channel)
 		get_order(channel->ringbuffer_pagecount * PAGE_SIZE));
 
 out:
+	tasklet_enable(&channel->callback_event);
 	return ret;
 }
 
@@ -630,9 +635,13 @@ void vmbus_close(struct vmbus_channel *channel)
 	 */
 	list_for_each_safe(cur, tmp, &channel->sc_list) {
 		cur_channel = list_entry(cur, struct vmbus_channel, sc_list);
-		if (cur_channel->state != CHANNEL_OPENED_STATE)
-			continue;
 		vmbus_close_internal(cur_channel);
+		if (cur_channel->rescind) {
+			mutex_lock(&vmbus_connection.channel_mutex);
+			hv_process_channel_removal(cur_channel,
+					   cur_channel->offermsg.child_relid);
+			mutex_unlock(&vmbus_connection.channel_mutex);
+		}
 	}
 	/*
 	 * Now close the primary.
