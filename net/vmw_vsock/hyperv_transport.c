@@ -527,7 +527,7 @@ static ssize_t hvs_stream_enqueue(struct vsock_sock *vsk, struct msghdr *msg,
 
 	BUILD_BUG_ON(sizeof(*send_buf) != PAGE_SIZE_4K);
 
-	send_buf = (struct hvs_send_buf *)__get_free_page(GFP_KERNEL);
+	send_buf = kmalloc(sizeof(*send_buf), GFP_KERNEL);
 	if (!send_buf)
 		return -ENOMEM;
 
@@ -545,7 +545,7 @@ static ssize_t hvs_stream_enqueue(struct vsock_sock *vsk, struct msghdr *msg,
 
 	ret = to_write;
 out:
-	free_page((unsigned long)send_buf);
+	kfree(send_buf);
 	return ret;
 }
 
