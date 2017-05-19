@@ -182,8 +182,12 @@ int vmbus_open(struct vmbus_channel *newchannel, u32 send_ringbuffer_size,
 	ret = vmbus_post_msg(open_msg,
 			     sizeof(struct vmbus_channel_open_channel), true);
 
-	if (ret == 0)
-		wait_for_completion(&open_info->waitevent);
+	if (ret == 0) {
+		if (0 == wait_for_completion_timeout(&open_info->waitevent, 5*HZ)) {
+			printk("cdx: timeout: vmbus_open()...\n");
+			ret = -ETIMEDOUT;
+		}
+	}
 
 	spin_lock_irqsave(&vmbus_connection.channelmsg_lock, flags);
 	list_del(&open_info->msglistentry);

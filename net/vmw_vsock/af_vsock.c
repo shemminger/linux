@@ -126,6 +126,7 @@ static struct proto vsock_proto = {
 
 static const struct vsock_transport *transport;
 static DEFINE_MUTEX(vsock_register_mutex);
+static DEFINE_MUTEX(vsock_accept_queue_mutex);
 
 /**** EXPORTS ****/
 
@@ -406,7 +407,9 @@ void vsock_enqueue_accept(struct sock *listener, struct sock *connected)
 
 	sock_hold(connected);
 	sock_hold(listener);
+	mutex_lock(&vsock_accept_queue_mutex);
 	list_add_tail(&vconnected->accept_queue, &vlistener->accept_queue);
+	mutex_unlock(&vsock_accept_queue_mutex);
 }
 EXPORT_SYMBOL_GPL(vsock_enqueue_accept);
 
@@ -423,7 +426,9 @@ static struct sock *vsock_dequeue_accept(struct sock *listener)
 	vconnected = list_entry(vlistener->accept_queue.next,
 				struct vsock_sock, accept_queue);
 
+	mutex_lock(&vsock_accept_queue_mutex);
 	list_del_init(&vconnected->accept_queue);
+	mutex_unlock(&vsock_accept_queue_mutex);
 	sock_put(listener);
 	/* The caller will need a reference on the connected socket so we let
 	 * it call sock_put().
