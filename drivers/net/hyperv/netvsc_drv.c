@@ -216,9 +216,6 @@ static inline u32 netvsc_get_hash(struct sk_buff *skb, struct sock *sk)
 		return 0;
 
 	if (flow.basic.ip_proto == IPPROTO_TCP) {
-		if (sk)
-			skb_set_hash_from_sk(skb, sk);
-
 		return skb_get_hash(skb);
 	} else {
 		if (flow.basic.n_proto == htons(ETH_P_IP))
@@ -227,9 +224,9 @@ static inline u32 netvsc_get_hash(struct sk_buff *skb, struct sock *sk)
 			hash = jhash2((u32 *)&flow.addrs.v6addrs, 8, hashrnd);
 		else
 			hash = 0;
-	}
 
-	skb_set_hash(skb, hash, PKT_HASH_TYPE_L3);
+		skb_set_hash(skb, hash, PKT_HASH_TYPE_L3);
+	}
 
 	return hash;
 }
