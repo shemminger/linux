@@ -120,6 +120,9 @@ int vmbus_open(struct vmbus_channel *newchannel, u32 send_ringbuffer_size,
 		goto error_free_pages;
 	}
 
+	if (is_hvsock_channel(newchannel))
+		set_channel_pending_send_size(newchannel, 4121);
+
 	ret = hv_ringbuffer_init(&newchannel->inbound,
 				 &page[send_ringbuffer_size >> PAGE_SHIFT],
 				 recv_ringbuffer_size >> PAGE_SHIFT);

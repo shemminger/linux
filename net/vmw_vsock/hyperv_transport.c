@@ -350,9 +350,11 @@ static void hvs_open_connection(struct vmbus_channel *chan)
 	set_per_channel_state(chan, conn_from_host ? new : sk);
 	vmbus_set_chn_rescind_callback(chan, hvs_close_connection);
 
+#if 0
 	/* See hvs_channel_cb() and hvs_notify_poll_out()  */
 	set_channel_pending_send_size(chan,
 				      HVS_PKT_LEN(HVS_SEND_BUF_SIZE) + 1);
+#endif
 
 	if (conn_from_host) {
 		new->sk_state = SS_CONNECTED;
