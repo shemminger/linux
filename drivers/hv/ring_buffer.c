@@ -441,8 +441,9 @@ void hv_pkt_iter_close(struct vmbus_channel *channel)
 		u32 pending_sz = READ_ONCE(rbi->ring_buffer->pending_send_sz);
 
 		/*
-		 * If there was space before we began iteration, then host was not blocked.
-		 * also handles case wheer pending_sz is zero then host has nothing pending
+		 * If there was space before we began iteration, then
+		 * host was not blocked.  also handles case where
+		 * pending_sz is zero then host has nothing pending
 		 */
 		if (orig_write_sz > pending_sz)
 			return;
