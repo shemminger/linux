@@ -980,13 +980,13 @@ static void hv_irq_unmask(struct irq_data *data)
 				goto exit_unlock;
 			}
 
-			__set_bit(cpu_vmbus,
-				  (unsigned long *)&params->int_target.vp_mask);
+			params->int_target.vp_set.masks[cpu_vmbus / 64] |=
+				(1ULL << (cpu_vmbus & 63));
 		}
 	} else {
 		for_each_cpu_and(cpu, dest, cpu_online_mask) {
-			__set_bit(hv_tmp_cpu_nr_to_vp_nr(cpu),
-				  (unsigned long *)&params->int_target.vp_mask);
+			params->int_target.vp_mask |=
+				(1ULL << hv_tmp_cpu_nr_to_vp_nr(cpu));
 		}
 	}
 
