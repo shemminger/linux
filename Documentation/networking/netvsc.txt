@@ -1,0 +1,54 @@
+Hyper-V network driver
+======================
+
+
+Compatiablity
+=============
+
+This driver is compatible and tested on Windows Server 2012 R2, 2016 and
+Windows 10.
+
+Features
+========
+
+  Checksum offload
+  ----------------
+  The netvsc driver supports checksum offload as long as the underlying Hyper-V
+  version does. Windows Server 2016 and Azure support checksum offload for
+  TCP and UDP for both IPv4 and IPv6. Windows Server 2012 only supports
+  checksum offload for TCP.
+
+  Receive Side Scaling
+  --------------------
+  Hyper-V supports receive side scaling. For TCP, packets are distributed
+  among available queues based on IP address and port number. Current versions
+  of Hyper-V host, only distribute UDP packets based on IP source and destination address;
+  port number is not used as part of the hash value for UDP. Fragmented IP packets
+  are not distributed between queues; all fragmented packets arrive on the
+  first channel.
+
+  Generic Receive Offload, aka GRO
+  --------------------------------
+  The driver supports GRO and it is enabled by default. GRO coalesces like
+  packets and significantly reduces CPU usage under heavy Rx load.
+
+  SR-IOV support
+  --------------
+  Hyper-V supports SR-IOV as a hardware acceleration option. If SR-IOV is enabled
+  in both the vSwitch and the guest configuration, then the Virtual Function (VF)
+  device is passed to the guest as a PCI device. In this case, both a synthetic
+  (netvsc) and VF device are visible in the guest OS. Both NIC's have the same
+  MAC address.
+
+  There are two options for how the VF can be used, controlled by the module
+  parameter "transparent_vf".  If transparent_vf is set then the netvsc will
+  act as the primary device, and the VF will be a slave device. Network state
+  (addresses, firewall, etc) should be applied only to the netvsc device;
+  the slave device should not be accessed directly. SR-IOV can be added
+  or removed at anytime and the netvsc driver will manage the datapath.
+
+  For compatibility with earlier releases, if transparent_vf is
+  disabled, (which is by default) then a bonding (or team) device can
+  be used to join the netvsc and VF device. This requires more
+  configuration and is more difficult to setup, especially when
+  dealing with the diversity in Linux network management utilities.
