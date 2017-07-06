@@ -58,7 +58,7 @@ static int debug = -1;
 module_param(debug, int, S_IRUGO);
 MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
 
-static bool transparent_vf __ro_after_init;
+static bool transparent_vf __read_mostly = true;
 module_param(transparent_vf, bool, S_IRUGO);
 MODULE_PARM_DESC(transparent_vf, "Transparent failover of SR-IOV devices");
 
