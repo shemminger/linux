@@ -33,6 +33,7 @@
 #include <linux/if_vlan.h>
 #include <linux/in.h>
 #include <linux/slab.h>
+#include <linux/netpoll.h>
 #include <net/arp.h>
 #include <net/route.h>
 #include <net/sock.h>
@@ -239,13 +240,11 @@ static inline int netvsc_get_tx_queue(struct net_device *ndev,
  *
  * TODO support XPS - but get_xps_queue not exported
  */
-static u16 netvsc_select_queue(struct net_device *ndev, struct sk_buff *skb,
-			void *accel_priv, select_queue_fallback_t fallback)
+static u16 netvsc_pick_tx(struct net_device *ndev, struct sk_buff *skb)
 {
-	unsigned int num_tx_queues = ndev->real_num_tx_queues;
 	int q_idx = sk_tx_queue_get(skb->sk);
 
-	if (q_idx < 0 || skb->ooo_okay) {
+	if (q_idx < 0 || skb->ooo_okay || q_idx >= ndev->real_num_tx_queues) {
 		/* If forwarding a packet, we use the recorded queue when
 		 * available for better cache locality.
 		 */
@@ -255,10 +254,31 @@ static u16 netvsc_select_queue(struct net_device *ndev, struct sk_buff *skb,
 			q_idx = netvsc_get_tx_queue(ndev, skb, q_idx);
 	}
 
-	while (unlikely(q_idx >= num_tx_queues))
-		q_idx -= num_tx_queues;
-
 	return q_idx;
+}
+
+static u16 netvsc_select_queue(struct net_device *ndev, struct sk_buff *skb,
+			void *accel_priv, select_queue_fallback_t fallback)
+{
+	struct net_device_context *ndc = netdev_priv(ndev);
+	struct net_device *vf_netdev = rcu_dereference(ndc->vf_netdev);
+	u16 txq;
+
+	if (transparent_vf && vf_netdev) {
+		txq = skb_rx_queue_recorded(skb) ? skb_get_rx_queue(skb) : 0;
+
+		/* Save the original txq
+		 * restore before passing to the VF driver
+		 */
+		qdisc_skb_cb(skb)->slave_dev_queue_mapping = skb->queue_mapping;
+	} else {
+		txq = netvsc_pick_tx(ndev, skb);
+	}
+
+	while (unlikely(txq >= ndev->real_num_tx_queues))
+		txq -= ndev->real_num_tx_queues;
+
+	return txq;
 }
 
 static u32 fill_pg_buf(struct page *page, u32 offset, u32 len,
@@ -363,21 +383,32 @@ static u32 net_checksum_info(struct sk_buff *skb)
 	return TRANSPORT_INFO_NOT_IP;
 }
 
+/* Send skb on the slave VF device.
+ * NB: alwyas send  netpoll packets over the synthetic path
+ */
 static int netvsc_vf_xmit(struct net_device *net, struct net_device *vf_netdev,
 			  struct sk_buff *skb)
 {
 	struct net_device_context *ndev_ctx = netdev_priv(net);
-	struct pcpu_sw_netstats *pcpu_stats
-		 = this_cpu_ptr(ndev_ctx->vf_stats);
+	int rc;
 
 	skb->dev = vf_netdev;
+	skb->queue_mapping = qdisc_skb_cb(skb)->slave_dev_queue_mapping;
 
-	u64_stats_update_begin(&pcpu_stats->syncp);
-	pcpu_stats->tx_packets++;
-	pcpu_stats->tx_bytes += skb->len;
-	u64_stats_update_end(&pcpu_stats->syncp);
+	rc = dev_queue_xmit(skb);
+	if (likely(rc == NET_XMIT_SUCCESS || rc == NET_XMIT_CN)) {
+		struct netvsc_vf_pcpu_stats *pcpu_stats
+			= this_cpu_ptr(ndev_ctx->vf_stats);
 
-	return dev_queue_xmit(skb);
+		u64_stats_update_begin(&pcpu_stats->syncp);
+		pcpu_stats->tx_packets++;
+		pcpu_stats->tx_bytes += skb->len;
+		u64_stats_update_end(&pcpu_stats->syncp);
+	} else {
+		this_cpu_inc(ndev_ctx->vf_stats->tx_dropped);
+	}
+
+	return rc;
 }
 
 static int netvsc_start_xmit(struct sk_buff *skb, struct net_device *net)
@@ -394,11 +425,12 @@ static int netvsc_start_xmit(struct sk_buff *skb, struct net_device *net)
 	struct hv_page_buffer page_buf[MAX_PAGE_BUFFER_COUNT];
 	struct hv_page_buffer *pb = page_buf;
 
-	/* already called with rcu_read_lock */
-	if (transparent_vf) {
+	if (transparent_vf && likely(!netpoll_tx_running(net))) {
 		struct net_device *vf_netdev;
 
-		/* if VF is present and up then redirect packets */
+		/* if VF is present and up then redirect packets
+		 * already called with rcu_read_lock
+		 */
 		vf_netdev = rcu_dereference(net_device_ctx->vf_netdev);
 		if (vf_netdev && netif_running(vf_netdev))
 			return netvsc_vf_xmit(net, vf_netdev, skb);
@@ -935,7 +967,7 @@ static int netvsc_change_mtu(struct net_device *ndev, int mtu)
 }
 
 static void netvsc_get_vf_stats(struct net_device *net,
-				struct pcpu_sw_netstats *tot)
+				struct netvsc_vf_pcpu_stats *tot)
 {
 	struct net_device_context *ndev_ctx = netdev_priv(net);
 	int i;
@@ -943,7 +975,7 @@ static void netvsc_get_vf_stats(struct net_device *net,
 	memset(tot, 0, sizeof(*tot));
 
 	for_each_possible_cpu(i) {
-		const struct pcpu_sw_netstats *stats
+		const struct netvsc_vf_pcpu_stats *stats
 			= per_cpu_ptr(ndev_ctx->vf_stats, i);
 		u64 rx_packets, rx_bytes, tx_packets, tx_bytes;
 		unsigned int start;
@@ -960,6 +992,7 @@ static void netvsc_get_vf_stats(struct net_device *net,
 		tot->tx_packets += tx_packets;
 		tot->rx_bytes   += rx_bytes;
 		tot->tx_bytes   += tx_bytes;
+		tot->tx_dropped += stats->tx_dropped;
 	}
 }
 
@@ -976,7 +1009,7 @@ static void netvsc_get_stats64(struct net_device *net,
 	netdev_stats_to_stats64(t, &net->stats);
 
 	if (transparent_vf) {
-		struct pcpu_sw_netstats vf_tot;
+		struct netvsc_vf_pcpu_stats vf_tot;
 
 		netvsc_get_vf_stats(net, &vf_tot);
 
@@ -984,6 +1017,7 @@ static void netvsc_get_stats64(struct net_device *net,
 		t->tx_packets += vf_tot.tx_packets;
 		t->rx_bytes   += vf_tot.rx_bytes;
 		t->tx_bytes   += vf_tot.tx_bytes;
+		t->tx_dropped += vf_tot.tx_dropped;
 	}
 
 	for (i = 0; i < nvdev->num_chn; i++) {
@@ -1050,10 +1084,11 @@ static const struct {
 	{ "tx_too_big",	  offsetof(struct netvsc_ethtool_stats, tx_too_big) },
 	{ "tx_busy",	  offsetof(struct netvsc_ethtool_stats, tx_busy) },
 }, vf_stats[] = {
-	{ "vf_rx_packets", offsetof(struct pcpu_sw_netstats, rx_packets) },
-	{ "vf_rx_bytes",   offsetof(struct pcpu_sw_netstats, rx_bytes) },
-	{ "vf_tx_packets", offsetof(struct pcpu_sw_netstats, tx_packets) },
-	{ "vf_tx_bytes",   offsetof(struct pcpu_sw_netstats, tx_bytes) },
+	{ "vf_rx_packets", offsetof(struct netvsc_vf_pcpu_stats, rx_packets) },
+	{ "vf_rx_bytes",   offsetof(struct netvsc_vf_pcpu_stats, rx_bytes) },
+	{ "vf_tx_packets", offsetof(struct netvsc_vf_pcpu_stats, tx_packets) },
+	{ "vf_tx_bytes",   offsetof(struct netvsc_vf_pcpu_stats, tx_bytes) },
+	{ "vf_tx_dropped", offsetof(struct netvsc_vf_pcpu_stats, tx_dropped) },
 };
 
 #define NETVSC_GLOBAL_STATS_LEN	ARRAY_SIZE(netvsc_stats)
@@ -1098,7 +1133,7 @@ static void netvsc_get_ethtool_stats(struct net_device *dev,
 		data[i] = *(unsigned long *)(nds + netvsc_stats[i].offset);
 
 	if (transparent_vf) {
-		struct pcpu_sw_netstats sum;
+		struct netvsc_vf_pcpu_stats sum;
 
 		netvsc_get_vf_stats(dev, &sum);
 		for (j = 0; j < NETVSC_VF_STATS_LEN; j++)
@@ -1486,7 +1521,7 @@ static rx_handler_result_t netvsc_vf_handle_frame(struct sk_buff **pskb)
 	struct sk_buff *skb = *pskb;
 	struct net_device *ndev = rcu_dereference(skb->dev->rx_handler_data);
 	struct net_device_context *ndev_ctx = netdev_priv(ndev);
-	struct pcpu_sw_netstats *pcpu_stats
+	struct netvsc_vf_pcpu_stats *pcpu_stats
 		 = this_cpu_ptr(ndev_ctx->vf_stats);
 
 	skb->dev = ndev;
@@ -1524,9 +1559,6 @@ static int netvsc_vf_join(struct net_device *vf_netdev,
 
 	/* set slave flag before open to prevent IPv6 addrconf */
 	vf_netdev->flags |= IFF_SLAVE;
-
-	/* Avoid overhead of qdisc in slave */
-	vf_netdev->priv_flags |= IFF_NO_QUEUE;
 
 	schedule_work(&ndev_ctx->vf_takeover);
 
@@ -1642,12 +1674,16 @@ static int netvsc_vf_up(struct net_device *vf_netdev)
 	netvsc_switch_datapath(ndev, true);
 	netdev_info(ndev, "Data path switched to VF: %s\n", vf_netdev->name);
 
-	/* If not doing transparent active-backup
-	 * then drop carrier of the netvsc device so that bonding
-	 * does switchover.
-	 */
-	if (!transparent_vf)
+	if (transparent_vf) {
+		/* the netvsc queue is not used in transparent mode */
+		ndev->priv_flags |= IFF_NO_QUEUE;
+	} else {
+		/* If not doing transparent active-backup
+		 * then drop carrier of the netvsc device so that bonding
+		 * does switchover.
+		 */
 		netif_carrier_off(ndev);
+	}
 
 	/* Now notify peers through VF device. */
 	call_netdevice_notifiers(NETDEV_NOTIFY_PEERS, vf_netdev);
@@ -1673,7 +1709,9 @@ static int netvsc_vf_down(struct net_device *vf_netdev)
 	netdev_info(ndev, "Data path switched from VF: %s\n", vf_netdev->name);
 	rndis_filter_close(netvsc_dev);
 
-	if (!transparent_vf)
+	if (transparent_vf)
+		ndev->priv_flags &= ~IFF_NO_QUEUE;
+	else
 		netif_carrier_on(ndev);
 
 	/* Now notify peers through netvsc device. */
@@ -1737,7 +1775,7 @@ static int netvsc_probe(struct hv_device *dev,
 	INIT_LIST_HEAD(&net_device_ctx->reconfig_events);
 	INIT_WORK(&net_device_ctx->vf_takeover, netvsc_vf_setup);
 	net_device_ctx->vf_stats
-		= netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
+		= netdev_alloc_pcpu_stats(struct netvsc_vf_pcpu_stats);
 	if (!net_device_ctx->vf_stats)
 		goto no_stats;
 
