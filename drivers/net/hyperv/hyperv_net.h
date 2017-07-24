@@ -148,6 +148,8 @@ struct netvsc_device_info {
 	unsigned char mac_adr[ETH_ALEN];
 	int  ring_size;
 	u32  num_chn;
+	u32  recv_buf_size;
+	u32  send_buf_size;
 };
 
 enum rndis_device_state {

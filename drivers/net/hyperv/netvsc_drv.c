@@ -44,12 +44,22 @@
 
 #include "hyperv_net.h"
 
-#define RING_SIZE_MIN 64
+#define RING_SIZE_MIN	 64
+#define RECV_BUFFER_MIN	 16
+#define SEND_BUFFER_MIN	 4
 #define LINKCHANGE_INT (2 * HZ)
 
 static int ring_size = 128;
 module_param(ring_size, int, S_IRUGO);
 MODULE_PARM_DESC(ring_size, "Ring buffer size (# of pages)");
+
+static unsigned int recv_buffer_size = (4 * 1024 * 1024) / PAGE_SIZE;
+module_param(recv_buffer_size, uint, S_IRUGO);
+MODULE_PARM_DESC(recv_buffer_size, "Receive buffer size (# of pages)");
+
+static unsigned int send_buffer_size = (1024 * 1024) / PAGE_SIZE;
+module_param(send_buffer_size, uint, S_IRUGO);
+MODULE_PARM_DESC(send_buffer_size, "Send buffer size (# of pages)");
 
 static const u32 default_msg = NETIF_MSG_DRV | NETIF_MSG_PROBE |
 				NETIF_MSG_LINK | NETIF_MSG_IFUP |
@@ -776,6 +786,8 @@ static int netvsc_set_channels(struct net_device *net,
 	memset(&device_info, 0, sizeof(device_info));
 	device_info.num_chn = count;
 	device_info.ring_size = ring_size;
+	device_info.send_buf_size = nvdev->send_buf_size;
+	device_info.recv_buf_size = nvdev->recv_buf_size;
 
 	nvdev = rndis_filter_device_add(dev, &device_info);
 	if (!IS_ERR(nvdev)) {
@@ -873,6 +885,8 @@ static int netvsc_change_mtu(struct net_device *ndev, int mtu)
 	memset(&device_info, 0, sizeof(device_info));
 	device_info.ring_size = ring_size;
 	device_info.num_chn = nvdev->num_chn;
+	device_info.send_buf_size = nvdev->send_buf_size;
+	device_info.recv_buf_size = nvdev->recv_buf_size;
 
 	rndis_filter_device_remove(hdev, nvdev);
 
@@ -1543,6 +1557,8 @@ static int netvsc_probe(struct hv_device *dev,
 	memset(&device_info, 0, sizeof(device_info));
 	device_info.ring_size = ring_size;
 	device_info.num_chn = VRSS_CHANNEL_DEFAULT;
+	device_info.send_buf_size = send_buffer_size * PAGE_SIZE;
+	device_info.recv_buf_size = recv_buffer_size * PAGE_SIZE;
 
 	nvdev = rndis_filter_device_add(dev, &device_info);
 	if (IS_ERR(nvdev)) {
@@ -1694,6 +1710,19 @@ static int __init netvsc_drv_init(void)
 		pr_info("Increased ring_size to %d (min allowed)\n",
 			ring_size);
 	}
+
+	if (recv_buffer_size < RECV_BUFFER_MIN) {
+		recv_buffer_size = RECV_BUFFER_MIN;
+		pr_notice("Increased receive buffer size to %u (min allowed)\n",
+			  recv_buffer_size);
+	}
+
+	if (send_buffer_size < SEND_BUFFER_MIN) {
+		send_buffer_size = SEND_BUFFER_MIN;
+		pr_notice("Increased receive buffer size to %u (min allowed)\n",
+			  send_buffer_size);
+	}
+
 	ret = vmbus_driver_register(&netvsc_drv);
 
 	if (ret)
