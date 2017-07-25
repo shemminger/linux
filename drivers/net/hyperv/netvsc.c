@@ -1185,7 +1185,8 @@ int netvsc_poll(struct napi_struct *napi, int budget)
 		nvchan->desc = __hv_pkt_iter_next(channel, nvchan->desc);
 	}
 
-	hv_pkt_iter_close(channel);
+	if (!nvchan->desc)
+		hv_pkt_iter_close(channel);
 
 	/* If send of pending receive completions suceeded
 	 *   and did not exhaust NAPI budget
