@@ -1,0 +1,6 @@
+What:		/sys/bus/vmbus/devices/.../driver_override
+Date:		April 2018
+Contact:	Stephen Hemminger <sthemmin@microsoft.com>
+Description:
+		This file allows the driver for a device to be specified which
+		will override standard static and dynamic ID matching.
